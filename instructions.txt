@@ -1,196 +1,235 @@
-# Instructions for Building the Poker Odds Trainer iOS App
+# Instructions for Building the Poker Odds Trainer App with React Native
 
-This document provides a step-by-step guide and best practices for developing the Poker Odds Trainer app as described in the `README.md`.
+This document provides a step-by-step guide and best practices for developing the Poker Odds Trainer app for iOS and Android using React Native and Expo.
 
-## 1. Project Setup (Xcode)
+## 1. Project Setup (React Native with Expo)
 
-1.  **Create a new Xcode project:**
-    *   Open Xcode -> File -> New -> Project.
-    *   Select the **iOS** tab and choose the **App** template.
-    *   Product Name: `PokerOddsTrainer`
-    *   Interface: **SwiftUI** (Recommended for modern iOS development).
-    *   Language: **Swift**.
-    *   Storage: **None** for now (you can add SwiftData or Core Data later for features like progress tracking).
-    *   Uncheck "Include Tests" if you want to add them manually later, but it's good practice to include them from the start.
+Expo makes setting up and running React Native apps straightforward.
 
-2.  **Version Control:**
-    *   Ensure "Create Git repository on my Mac" is checked during project creation.
-    *   Make an initial commit once the project is created. Commit regularly as you build features.
+1.  **Prerequisites:**
+    *   Install [Node.js](https://nodejs.org/) (LTS version recommended).
+    *   Install the Expo CLI: `npm install -g expo-cli`.
 
-## 2. Application Architecture (MVVM)
+2.  **Create a new Expo project:**
+    *   Open your terminal and run the following command. We'll use the TypeScript template for better code quality.
+        ```bash
+        npx create-expo-app PokerOddsTrainer --template blank-ts
+        ```
+    *   Navigate into your new project directory:
+        ```bash
+        cd PokerOddsTrainer
+        ```
 
-For a SwiftUI application, the **Model-View-ViewModel (MVVM)** architecture is a great fit. It promotes a clean separation of concerns.
+3.  **Version Control:**
+    *   A Git repository is initialized automatically. Make an initial commit and commit regularly as you build features.
 
-*   **Model:** The data and business logic. This is your `PokerScenario` struct and your `OddsCalculator` engine. It knows nothing about the UI.
-*   **View:** The UI of your app (your SwiftUI views). It displays data and sends user actions to the ViewModel.
-*   **ViewModel:** The bridge between the Model and the View. It prepares data from the Model to be displayed by the View and handles user inputs.
+## 2. Application Architecture (Component-Based with Hooks)
+
+React Native uses a component-based architecture. For this app, we can manage the state within our main `App` component using React Hooks (`useState`, `useCallback`, etc.).
+
+*   **Logic:** The business logic (like calculating odds) will be kept in separate utility functions.
+*   **State:** The application's state (the current scenario, user input) will be held in the main component using the `useState` hook.
+*   **Components:** The UI is built by creating and composing components from React Native's core library (`View`, `Text`, `TextInput`, `Button`).
+*   **Styling:** Styles are defined in JavaScript using the `StyleSheet` API, which provides optimizations and helps keep styling co-located with components.
 
 ## 3. Building the Core Components
 
-### Step 3.1: The Model
+We'll create a `src` directory to organize our code.
 
-Create a new Swift file called `PokerModel.swift`.
+*   `src/types.ts`: To define our `PokerScenario` type.
+*   `src/logic.ts`: For our `OddsCalculator` functions.
+*   `App.tsx`: The main application component.
 
-```swift
-// PokerModel.swift
+### Step 3.1: Create Logic and Types
 
-import Foundation
-
-// Represents a single poker scenario
-struct PokerScenario {
-    let id = UUID()
-    let potSize: Double
-    let betToCall: Double
-    let description: String // e.g., "You are on the turn with a flush draw."
-    // Add other properties like your hand, board cards, etc. if needed
+Create `src/types.ts`:
+```typescript
+// src/types.ts
+export interface PokerScenario {
+    id: string;
+    potSize: number;
+    betToCall: number;
+    description: string; // e.g., "You are on the turn with a flush draw."
 }
+```
 
+Create `src/logic.ts`:
+```typescript
+// src/logic.ts
 // Handles the core calculations
-struct OddsCalculator {
+export const OddsCalculator = {
     // Calculates pot odds and returns them as a ratio string (e.g., "3.5:1")
-    static func calculatePotOdds(potSize: Double, betToCall: Double) -> String {
-        guard betToCall > 0 else { return "N/A" }
-        let totalPot = potSize + betToCall
-        let odds = totalPot / betToCall
-        return String(format: "%.1f:1", odds)
-    }
-
+    calculatePotOdds: (potSize: number, betToCall: number): string => {
+        if (betToCall <= 0) {
+            return "N/A";
+        }
+        const totalPot = potSize + betToCall;
+        const odds = totalPot / betToCall;
+        return `${odds.toFixed(1)}:1`;
+    },
     // Add functions for implied odds, equity, etc. later
-}
+};
 ```
 
-### Step 3.2: The ViewModel
+### Step 3.2: The Main App Component
 
-Create a new Swift file called `GameViewModel.swift`.
+Replace the contents of `App.tsx` with the following:
 
-```swift
-// GameViewModel.swift
+```typescript
+// App.tsx
+import React, { useState, useMemo } from 'react';
+import { StyleSheet, Text, View, TextInput, Button, SafeAreaView, Platform, StatusBar } from 'react-native';
+import { PokerScenario } from './src/types';
+import { OddsCalculator } from './src/logic';
 
-import Foundation
-import Combine
+// A hardcoded list of scenarios for now
+const SCENARIOS: PokerScenario[] = [
+    { id: '1', potSize: 100, betToCall: 20, description: "Heads up on the turn. Pot is $100, opponent bets $20." },
+    { id: '2', potSize: 50, betToCall: 25, description: "You are on the flop. Pot is $50, opponent bets $25." },
+    // Add more scenarios...
+];
 
-class GameViewModel: ObservableObject {
-    @Published var currentScenario: PokerScenario
-    @Published var userAnswer: String = ""
-    @Published var feedbackMessage: String = ""
-    @Published var isAnswerCorrect: Bool = false
+export default function App() {
+    const [scenarioIndex, setScenarioIndex] = useState(0);
+    const [userAnswer, setUserAnswer] = useState('');
+    const [feedback, setFeedback] = useState<{ message: string; correct: boolean } | null>(null);
 
-    // A hardcoded list of scenarios for now
-    private let scenarios: [PokerScenario] = [
-        PokerScenario(potSize: 100, betToCall: 20, description: "Heads up on the turn. Pot is $100, opponent bets $20."),
-        PokerScenario(potSize: 50, betToCall: 25, description: "You are on the flop. Pot is $50, opponent bets $25."),
-        // Add more scenarios...
-    ]
+    const currentScenario = SCENARIOS[scenarioIndex];
 
-    init() {
-        // Start with the first scenario
-        self.currentScenario = scenarios.first!
-    }
+    const correctAnswer = useMemo(() => {
+        return OddsCalculator.calculatePotOdds(currentScenario.potSize, currentScenario.betToCall);
+    }, [currentScenario]);
 
-    func checkAnswer() {
-        let correctAnswer = OddsCalculator.calculatePotOdds(potSize: currentScenario.potSize, betToCall: currentScenario.betToCall)
-
-        // Basic string comparison. You might want more robust checking.
-        if userAnswer.trimmingCharacters(in: .whitespaces) == correctAnswer {
-            isAnswerCorrect = true
-            feedbackMessage = "Correct! The odds were \(correctAnswer)."
+    const checkAnswer = () => {
+        if (userAnswer.trim() === correctAnswer) {
+            setFeedback({ message: `Correct! The odds were ${correctAnswer}.`, correct: true });
         } else {
-            isAnswerCorrect = false
-            feedbackMessage = "Not quite. The correct odds are \(correctAnswer)."
+            setFeedback({ message: `Not quite. The correct odds are ${correctAnswer}.`, correct: false });
         }
-    }
+    };
 
-    func nextScenario() {
-        // Move to the next scenario, or loop back to the first
-        if let currentIndex = scenarios.firstIndex(where: { $0.id == currentScenario.id }), currentIndex + 1 < scenarios.count {
-            currentScenario = scenarios[currentIndex + 1]
-        } else {
-            currentScenario = scenarios.first!
-        }
-        // Reset state
-        userAnswer = ""
-        feedbackMessage = ""
-    }
+    const nextScenario = () => {
+        setScenarioIndex((prevIndex) => (prevIndex + 1) % SCENARIOS.length);
+        setUserAnswer('');
+        setFeedback(null);
+    };
+
+    return (
+        <SafeAreaView style={styles.safeArea}>
+            <View style={styles.container}>
+                <Text style={styles.title}>Poker Odds Trainer</Text>
+
+                <View style={styles.scenarioBox}>
+                    <Text style={styles.description}>{currentScenario.description}</Text>
+                    <Text style={styles.potDetails}>
+                        Pot: ${currentScenario.potSize.toFixed(2)} | Bet to Call: ${currentScenario.betToCall.toFixed(2)}
+                    </Text>
+                </View>
+
+                <View style={styles.inputContainer}>
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Enter pot odds (e.g., 4.0:1)"
+                        value={userAnswer}
+                        onChangeText={setUserAnswer}
+                        keyboardType="numeric"
+                    />
+                    <Button title="Check" onPress={checkAnswer} />
+                </View>
+
+                {feedback && (
+                    <View style={styles.feedbackContainer}>
+                        <Text style={[styles.feedbackText, { color: feedback.correct ? 'green' : 'red' }]}>
+                            {feedback.message}
+                        </Text>
+                        <Button title="Next Scenario" onPress={nextScenario} />
+                    </View>
+                )}
+            </View>
+        </SafeAreaView>
+    );
 }
+
+const styles = StyleSheet.create({
+    safeArea: {
+        flex: 1,
+        backgroundColor: '#f5f5f5',
+        paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
+    },
+    container: {
+        flex: 1,
+        padding: 20,
+    },
+    title: {
+        fontSize: 28,
+        fontWeight: 'bold',
+        textAlign: 'center',
+        marginBottom: 20,
+    },
+    scenarioBox: {
+        padding: 15,
+        backgroundColor: '#fff',
+        borderRadius: 8,
+        marginBottom: 20,
+        alignItems: 'center',
+    },
+    description: {
+        fontSize: 18,
+        textAlign: 'center',
+        marginBottom: 10,
+    },
+    potDetails: {
+        fontSize: 16,
+        color: '#666',
+    },
+    inputContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 20,
+    },
+    input: {
+        flex: 1,
+        borderColor: '#ccc',
+        borderWidth: 1,
+        borderRadius: 8,
+        padding: 10,
+        marginRight: 10,
+        fontSize: 16,
+    },
+    feedbackContainer: {
+        alignItems: 'center',
+    },
+    feedbackText: {
+        fontSize: 16,
+        marginBottom: 10,
+    },
+});
 ```
 
-### Step 3.3: The View
+## 4. React Native Development Best Practices
 
-Modify your `ContentView.swift` file.
+*   **Component Structure:** For larger apps, break down the UI into smaller, reusable components (e.g., `ScenarioCard`, `InputForm`).
+*   **State Management:** As the app grows, consider using React's Context API or a dedicated state management library like Zustand or Redux Toolkit to manage global state.
+*   **Accessibility:** Use accessibility props like `accessible`, `accessibilityLabel`, and `accessibilityHint` on your components to support screen readers.
+*   **Platform-Specific Code:** Use the `Platform` module to apply different styles or logic for iOS and Android when needed (as shown for the `StatusBar` padding).
+*   **Testing:** Use Jest and React Native Testing Library for unit and component testing.
 
-```swift
-// ContentView.swift
+    *Example Test (`src/logic.test.ts`):*
+    ```typescript
+    import { OddsCalculator } from './logic';
 
-import SwiftUI
-
-struct ContentView: View {
-    // Create an instance of the ViewModel
-    @StateObject private var viewModel = GameViewModel()
-
-    var body: some View {
-        VStack(spacing: 20) {
-            Text("Poker Odds Trainer")
-                .font(.largeTitle)
-
-            // Scenario Display
-            VStack {
-                Text(viewModel.currentScenario.description)
-                    .font(.headline)
-                    .multilineTextAlignment(.center)
-                Text("Pot: $\(viewModel.currentScenario.potSize, specifier: "%.2f") | Bet to Call: $\(viewModel.currentScenario.betToCall, specifier: "%.2f")")
-                    .font(.subheadline)
-            }
-            .padding()
-
-            // User Input
-            HStack {
-                TextField("Enter pot odds (e.g., 4:1)", text: $viewModel.userAnswer)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .keyboardType(.decimalPad)
-
-                Button("Check", action: viewModel.checkAnswer)
-                    .buttonStyle(.borderedProminent)
-            }
-
-            // Feedback Area
-            if !viewModel.feedbackMessage.isEmpty {
-                Text(viewModel.feedbackMessage)
-                    .foregroundColor(viewModel.isAnswerCorrect ? .green : .red)
-                    .padding()
-
-                Button("Next Scenario", action: viewModel.nextScenario)
-                    .buttonStyle(.bordered)
-            }
-
-            Spacer()
-        }
-        .padding()
-    }
-}
-```
-
-## 4. iOS Development Best Practices
-
-*   **Dependency Injection:** For testing, instead of creating the `scenarios` array inside the ViewModel, you could pass it in via the `init`. This allows you to inject mock scenarios during tests.
-*   **Accessibility:** Use `.accessibilityLabel()` and `.accessibilityHint()` modifiers on your SwiftUI views to support VoiceOver and other assistive technologies. For example, add an accessibility label to the text field describing what to enter.
-*   **Human Interface Guidelines (HIG):** Refer to Apple's HIG for guidance on layout, fonts, colors, and control usage. Keep the interface clean and intuitive.
-*   **Unit Testing:** Use Xcode's Test navigator to add unit tests. Create a new test file for your `OddsCalculator` logic.
-
-    *Example Test (`PokerOddsTrainerTests.swift`):*
-    ```swift
-    func testPotOddsCalculation() {
-        let potSize = 100.0
-        let betToCall = 25.0
-        let expectedOdds = "5.0:1" // (100+25) / 25 = 5
-
-        let calculatedOdds = OddsCalculator.calculatePotOdds(potSize: potSize, betToCall: betToCall)
-
-        XCTAssertEqual(calculatedOdds, expectedOdds, "The pot odds calculation is incorrect.")
-    }
+    test('calculates pot odds correctly', () => {
+      expect(OddsCalculator.calculatePotOdds(100, 25)).toBe('5.0:1');
+    });
     ```
 
 ## 5. How to Build and Run
 
-1.  **Select a Target:** In the top bar of Xcode, select an iOS Simulator (e.g., "iPhone 15 Pro") or a physically connected iPhone.
-2.  **Run the App:** Click the "Run" button (the triangle icon) or press `Cmd+R`.
-3.  **Interact:** The app will launch in the simulator or on your device. You can now test the functionality you've built.
+1.  **Start the development server:**
+    ```bash
+    npx expo start
+    ```
+2.  **Run on a device or simulator:**
+    *   **iOS Simulator:** Press `i` in the terminal.
+    *   **Android Emulator:** Press `a` in the terminal.
+    *   **Physical Device:** Install the "Expo Go" app on your phone and scan the QR code that appears in the terminal.

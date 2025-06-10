@@ -1,0 +1,196 @@
+# Instructions for Building the Poker Odds Trainer iOS App
+
+This document provides a step-by-step guide and best practices for developing the Poker Odds Trainer app as described in the `README.md`.
+
+## 1. Project Setup (Xcode)
+
+1.  **Create a new Xcode project:**
+    *   Open Xcode -> File -> New -> Project.
+    *   Select the **iOS** tab and choose the **App** template.
+    *   Product Name: `PokerOddsTrainer`
+    *   Interface: **SwiftUI** (Recommended for modern iOS development).
+    *   Language: **Swift**.
+    *   Storage: **None** for now (you can add SwiftData or Core Data later for features like progress tracking).
+    *   Uncheck "Include Tests" if you want to add them manually later, but it's good practice to include them from the start.
+
+2.  **Version Control:**
+    *   Ensure "Create Git repository on my Mac" is checked during project creation.
+    *   Make an initial commit once the project is created. Commit regularly as you build features.
+
+## 2. Application Architecture (MVVM)
+
+For a SwiftUI application, the **Model-View-ViewModel (MVVM)** architecture is a great fit. It promotes a clean separation of concerns.
+
+*   **Model:** The data and business logic. This is your `PokerScenario` struct and your `OddsCalculator` engine. It knows nothing about the UI.
+*   **View:** The UI of your app (your SwiftUI views). It displays data and sends user actions to the ViewModel.
+*   **ViewModel:** The bridge between the Model and the View. It prepares data from the Model to be displayed by the View and handles user inputs.
+
+## 3. Building the Core Components
+
+### Step 3.1: The Model
+
+Create a new Swift file called `PokerModel.swift`.
+
+```swift
+// PokerModel.swift
+
+import Foundation
+
+// Represents a single poker scenario
+struct PokerScenario {
+    let id = UUID()
+    let potSize: Double
+    let betToCall: Double
+    let description: String // e.g., "You are on the turn with a flush draw."
+    // Add other properties like your hand, board cards, etc. if needed
+}
+
+// Handles the core calculations
+struct OddsCalculator {
+    // Calculates pot odds and returns them as a ratio string (e.g., "3.5:1")
+    static func calculatePotOdds(potSize: Double, betToCall: Double) -> String {
+        guard betToCall > 0 else { return "N/A" }
+        let totalPot = potSize + betToCall
+        let odds = totalPot / betToCall
+        return String(format: "%.1f:1", odds)
+    }
+
+    // Add functions for implied odds, equity, etc. later
+}
+```
+
+### Step 3.2: The ViewModel
+
+Create a new Swift file called `GameViewModel.swift`.
+
+```swift
+// GameViewModel.swift
+
+import Foundation
+import Combine
+
+class GameViewModel: ObservableObject {
+    @Published var currentScenario: PokerScenario
+    @Published var userAnswer: String = ""
+    @Published var feedbackMessage: String = ""
+    @Published var isAnswerCorrect: Bool = false
+
+    // A hardcoded list of scenarios for now
+    private let scenarios: [PokerScenario] = [
+        PokerScenario(potSize: 100, betToCall: 20, description: "Heads up on the turn. Pot is $100, opponent bets $20."),
+        PokerScenario(potSize: 50, betToCall: 25, description: "You are on the flop. Pot is $50, opponent bets $25."),
+        // Add more scenarios...
+    ]
+
+    init() {
+        // Start with the first scenario
+        self.currentScenario = scenarios.first!
+    }
+
+    func checkAnswer() {
+        let correctAnswer = OddsCalculator.calculatePotOdds(potSize: currentScenario.potSize, betToCall: currentScenario.betToCall)
+
+        // Basic string comparison. You might want more robust checking.
+        if userAnswer.trimmingCharacters(in: .whitespaces) == correctAnswer {
+            isAnswerCorrect = true
+            feedbackMessage = "Correct! The odds were \(correctAnswer)."
+        } else {
+            isAnswerCorrect = false
+            feedbackMessage = "Not quite. The correct odds are \(correctAnswer)."
+        }
+    }
+
+    func nextScenario() {
+        // Move to the next scenario, or loop back to the first
+        if let currentIndex = scenarios.firstIndex(where: { $0.id == currentScenario.id }), currentIndex + 1 < scenarios.count {
+            currentScenario = scenarios[currentIndex + 1]
+        } else {
+            currentScenario = scenarios.first!
+        }
+        // Reset state
+        userAnswer = ""
+        feedbackMessage = ""
+    }
+}
+```
+
+### Step 3.3: The View
+
+Modify your `ContentView.swift` file.
+
+```swift
+// ContentView.swift
+
+import SwiftUI
+
+struct ContentView: View {
+    // Create an instance of the ViewModel
+    @StateObject private var viewModel = GameViewModel()
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("Poker Odds Trainer")
+                .font(.largeTitle)
+
+            // Scenario Display
+            VStack {
+                Text(viewModel.currentScenario.description)
+                    .font(.headline)
+                    .multilineTextAlignment(.center)
+                Text("Pot: $\(viewModel.currentScenario.potSize, specifier: "%.2f") | Bet to Call: $\(viewModel.currentScenario.betToCall, specifier: "%.2f")")
+                    .font(.subheadline)
+            }
+            .padding()
+
+            // User Input
+            HStack {
+                TextField("Enter pot odds (e.g., 4:1)", text: $viewModel.userAnswer)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .keyboardType(.decimalPad)
+
+                Button("Check", action: viewModel.checkAnswer)
+                    .buttonStyle(.borderedProminent)
+            }
+
+            // Feedback Area
+            if !viewModel.feedbackMessage.isEmpty {
+                Text(viewModel.feedbackMessage)
+                    .foregroundColor(viewModel.isAnswerCorrect ? .green : .red)
+                    .padding()
+
+                Button("Next Scenario", action: viewModel.nextScenario)
+                    .buttonStyle(.bordered)
+            }
+
+            Spacer()
+        }
+        .padding()
+    }
+}
+```
+
+## 4. iOS Development Best Practices
+
+*   **Dependency Injection:** For testing, instead of creating the `scenarios` array inside the ViewModel, you could pass it in via the `init`. This allows you to inject mock scenarios during tests.
+*   **Accessibility:** Use `.accessibilityLabel()` and `.accessibilityHint()` modifiers on your SwiftUI views to support VoiceOver and other assistive technologies. For example, add an accessibility label to the text field describing what to enter.
+*   **Human Interface Guidelines (HIG):** Refer to Apple's HIG for guidance on layout, fonts, colors, and control usage. Keep the interface clean and intuitive.
+*   **Unit Testing:** Use Xcode's Test navigator to add unit tests. Create a new test file for your `OddsCalculator` logic.
+
+    *Example Test (`PokerOddsTrainerTests.swift`):*
+    ```swift
+    func testPotOddsCalculation() {
+        let potSize = 100.0
+        let betToCall = 25.0
+        let expectedOdds = "5.0:1" // (100+25) / 25 = 5
+
+        let calculatedOdds = OddsCalculator.calculatePotOdds(potSize: potSize, betToCall: betToCall)
+
+        XCTAssertEqual(calculatedOdds, expectedOdds, "The pot odds calculation is incorrect.")
+    }
+    ```
+
+## 5. How to Build and Run
+
+1.  **Select a Target:** In the top bar of Xcode, select an iOS Simulator (e.g., "iPhone 15 Pro") or a physically connected iPhone.
+2.  **Run the App:** Click the "Run" button (the triangle icon) or press `Cmd+R`.
+3.  **Interact:** The app will launch in the simulator or on your device. You can now test the functionality you've built.
